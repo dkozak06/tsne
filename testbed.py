@@ -73,7 +73,7 @@ def tsne(x=np.array([]), intrinsic_dim = 2, perplexity = 30):
     iY = np.zeros((n, intrinsic_dim));
     gains = np.ones((n, intrinsic_dim));
     P = x2p(x, perplexity)
-111
+
 if __name__ == "__main__":
     print ("Run Y = tsne.tsne(X, no_dims, perplexity) to perform t-SNE on your dataset.")
     print ("Running example on 2,500 MNIST digits...")
