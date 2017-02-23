@@ -2,6 +2,7 @@ import numpy as np
 import sklearn as sk
 import scipy as sp
 import scipy.spatial
+import pylab as plot
 
 
 def x2p(x=np.array([]), perplexity=40):
@@ -50,7 +51,7 @@ def x2p(x=np.array([]), perplexity=40):
     return P
 
 
-def pca(x=np.array([]), output_dim=1):
+def pca(x=np.array([]), output_dim=30):
     (n, d) = np.shape(x)
     x -= np.tile(np.mean(x, 0), (n, 1))
     (l, m) = np.linalg.eig(np.dot(x.T, x))
@@ -58,15 +59,14 @@ def pca(x=np.array([]), output_dim=1):
     return x_new
 
 
-# Set parameters, initiaize Y, set Q
-def tsne(x=np.array([]), intrinsic_dim = 2, perplexity = 30):
-    x = pca(x, 30).real
+# Set parameters, initialize Y, set Q
+def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
+    x = pca(x, initial_dims).real
     (n, d) = x.shape
     maxit = 1000
     momentum_init = .5
     momentum_final = .8
     eta = 500
-    min_gain = 0.01
     y = np.random.randn(n, intrinsic_dim)
     dY = np.zeros((n, intrinsic_dim))
     dYold = np.zeros((n, intrinsic_dim))
@@ -90,7 +90,7 @@ def tsne(x=np.array([]), intrinsic_dim = 2, perplexity = 30):
         # Compute gradient
         PQ = P-Q
         for i in range(n):
-            dY = np.multiply(2, np.sum(np.multiply(PQ[i]-np.transpose(PQ)[i], y[i,:]-y)))
+            dY = np.multiply(2, np.sum(np.multiply(PQ[i]-np.transpose(PQ)[i], y[i, :]-y)))
 
         # Set new outputs
         if iter < 20:
@@ -113,3 +113,7 @@ if __name__ == "__main__":
     print ("Run Y = tsne.tsne(X, no_dims, perplexity) to perform t-SNE on your dataset.")
     print ("Running example on 2,500 MNIST digits...")
     x = np.loadtxt("mnist2500_X.txt")
+    labels = np.loadtxt('mnist2500_labels.txt')
+    y = tsne(x, 2, 50, 60)
+    plot.scatter(y[:, 0], y[:, 1], 20, labels)
+    plot.show()
