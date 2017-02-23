@@ -63,7 +63,7 @@ def pca(x=np.array([]), output_dim=30):
 def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
     x = pca(x, initial_dims).real
     (n, d) = x.shape
-    maxit = 1000
+    maxit = 200
     momentum_init = .5
     momentum_final = .8
     eta = 500
@@ -84,13 +84,14 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
         tri[np.tril_indices(n, -1)] = distance
         np.fill_diagonal(tri, np.infty)
         for j in range(n):
-            q = np.exp(-np.square(tri[j]))/np.sum(np.exp(-np.square(tri[j])))
+            q = np.exp(-np.square(tri[j]))/np.maximum(1e-12,np.sum(np.exp(-np.square(tri[j]))))
             Q[j] = q
-
+        Q = np.divide(Q,np.sum(Q))
+        Q = np.maximum(Q,1e-12)
         # Compute gradient
         PQ = P-Q
         for i in range(n):
-            dY = np.multiply(2, np.sum(np.multiply(PQ[i]-np.transpose(PQ)[i], y[i, :]-y)))
+            dY[i,:] =  np.sum(np.multiply(np.transpose(np.tile(PQ[i]-np.transpose(PQ)[i],(intrinsic_dim,1))), y[i, :]-y),0)
 
         # Set new outputs
         if iter < 20:
@@ -98,15 +99,20 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
         else:
             momentum = momentum_final
 
-        y += eta * dY + momentum * (dY - dYold)
+        y += (eta-iter*5) * dY + momentum * (dY - dYold)
         dYold = dY
 
         # Compute Current Cost
         C = np.sum(np.multiply(P, np.log(np.divide(P,Q))))
         print("Iteration", (iter + 1), ": Error is ", round(C, 2))
 
-        if iter == 100:
+        if iter == 50:
             P = P/4
+
+        if iter % 20 == 0:
+            plot.scatter(y[:, 0], y[:, 1], 20, labels)
+            plot.show()
+
     return y
 
 if __name__ == "__main__":
@@ -114,6 +120,6 @@ if __name__ == "__main__":
     print ("Running example on 2,500 MNIST digits...")
     x = np.loadtxt("mnist2500_X.txt")
     labels = np.loadtxt('mnist2500_labels.txt')
-    y = tsne(x, 2, 50, 60)
+    y = tsne(x, 2, 30, 30)
     plot.scatter(y[:, 0], y[:, 1], 20, labels)
     plot.show()
