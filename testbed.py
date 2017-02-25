@@ -4,6 +4,8 @@ import scipy as sp
 import scipy.spatial
 import pylab as plot
 
+np.random.seed(1)
+
 
 def x2p(x=np.array([]), perplexity=40):
     # Get dimensions
@@ -11,10 +13,10 @@ def x2p(x=np.array([]), perplexity=40):
     distance = sp.spatial.distance.pdist(x, metric='euclidean')
     tri = np.zeros((n,n))
     tri[np.triu_indices(n, 1)] = distance
-    tri[np.tril_indices(n, -1)] = distance
+    tri = tri + tri.T
     np.fill_diagonal(tri, np.infty)
     P = np.zeros((n, n))
-    maxit = 100
+    maxit = 50
     sigma = np.ones(n)
     tol = 1e-5
     targetentropy = np.log2(perplexity)
@@ -26,26 +28,28 @@ def x2p(x=np.array([]), perplexity=40):
 
         if i % 100 == 0:
             print("Computing conditional probabilities for point ", i, " of ", n, "...")
-        p = np.exp(-np.square(tri[i]) / (2 * sigma[i])) / (np.sum(np.exp(-np.square(tri[i]) / (2 * sigma[i]))))
+        p = np.exp(-np.square(tri[i]) / (2 * np.square(sigma[i]))) / (np.sum(np.exp(-np.square(tri[i]) / (2 * np.square(sigma[i])))))
         entropy = -sum(np.multiply(p[p != 0], np.log2(p[p != 0])))
 
-        while abs(entropy-targetentropy > tol) and it < maxit:
+        while abs(entropy-targetentropy) > tol and it < maxit:
 
-            p = np.exp(-np.square(tri[i])/(2*sigma[i]))/(np.sum(np.exp(-np.square(tri[i])/(2*sigma[i]))))
+            p = np.exp(-np.square(tri[i]) / (2 * np.square(sigma[i]))) / (
+            np.sum(np.exp(-np.square(tri[i]) / (2 * np.square(sigma[i])))))
+
             entropy = -sum(np.multiply(p[0 != p], np.log2(p[p != 0])))
 
             if entropy > targetentropy:
                 sigmamax = sigma[i].copy()
                 if sigmamin == -np.inf:
-                    sigma = np.multiply(sigma, 0.5)
+                    sigma[i] = np.multiply(sigma[i], .5)
                 else:
-                    sigma = np.multiply(np.add(sigma, sigmamin), 0.5)
+                    sigma[i] = np.multiply(np.add(sigma[i], sigmamin), 0.5)
             else:
                 sigmamin = sigma[i].copy()
                 if sigmamax == np.inf:
-                    sigma = np.multiply(sigma, 2)
+                    sigma[i] = np.multiply(sigma[i], 2)
                 else:
-                    sigma = np.multiply(np.add(sigma, sigmamax), 2)
+                    sigma[i] = np.multiply(np.add(sigma[i], sigmamax), 0.5)
             it += 1
         P[i] = p
     return P
@@ -61,19 +65,23 @@ def pca(x=np.array([]), output_dim=30):
 
 # Set parameters, initialize Y, set Q
 def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
+    plot.ion()
     x = pca(x, initial_dims).real
     (n, d) = x.shape
-    maxit = 200
+    maxit = 1000
     momentum_init = .5
     momentum_final = .8
     eta = 500
+    min_gain = 0.01
     y = np.random.randn(n, intrinsic_dim)
     dY = np.zeros((n, intrinsic_dim))
-    dYold = np.zeros((n, intrinsic_dim))
+    iY = np.zeros((n, intrinsic_dim))
     P = x2p(x, perplexity)
     P = np.divide(P + np.transpose(P), 2*n)
+    P *= 4
     P = np.maximum(P, 1e-12)
     Q = np.zeros((n, n))
+    gains = np.ones((n, intrinsic_dim))
 
     for iter in range(maxit):
         # Compute Q
@@ -81,38 +89,45 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
         distance = sp.spatial.distance.pdist(y, metric='euclidean')
         tri = np.zeros((n, n))
         tri[np.triu_indices(n, 1)] = distance
-        tri[np.tril_indices(n, -1)] = distance
+        tri = tri + tri.T
         np.fill_diagonal(tri, np.infty)
         for j in range(n):
-            q = np.exp(-np.square(tri[j]))/np.maximum(1e-12,np.sum(np.exp(-np.square(tri[j]))))
+            q = np.divide(np.power(1 + np.square(tri[j]), -1), np.sum(np.power(1 + np.square(tri[j]), -1)))
             Q[j] = q
-        Q = np.divide(Q,np.sum(Q))
+        Q = Q/np.sum(Q)
         Q = np.maximum(Q,1e-12)
         # Compute gradient
         PQ = P-Q
+
         for i in range(n):
-            dY[i,:] =  np.sum(np.multiply(np.transpose(np.tile(PQ[i]-np.transpose(PQ)[i],(intrinsic_dim,1))), y[i, :]-y),0)
+            dY[i, :] = np.sum(np.tile(PQ[:, i] * np.power((1 + np.square(tri[:, i])), -1), (intrinsic_dim, 1)).T * (y[i, :]-y), 0)
 
         # Set new outputs
         if iter < 20:
             momentum = momentum_init
         else:
             momentum = momentum_final
+        gains = (gains + 0.2) * ((dY > 0) != (iY > 0)) + (gains * 0.8) * ((dY > 0) == (iY > 0))
+        gains[gains < min_gain] = min_gain
 
-        y += (eta-iter*5) * dY + momentum * (dY - dYold)
-        dYold = dY
+        iY = momentum * iY - (eta * gains * dY)
+        y += iY
+        #y = y - np.tile(np.mean(y, 0), (n, 1))
+
 
         # Compute Current Cost
         C = np.sum(np.multiply(P, np.log(np.divide(P,Q))))
-        print("Iteration", (iter + 1), ": Error is ", round(C, 2))
 
-        if iter == 50:
+
+        if iter == 100:
             P = P/4
 
-        if iter % 20 == 0:
+        if iter % 1 == 0:
+            print("Iteration", (iter + 1), ": Error is ", round(C, 4))
+            plot.clf()
+            plot.pause(.001)
             plot.scatter(y[:, 0], y[:, 1], 20, labels)
-            plot.show()
-
+            plot.pause(0.001)
     return y
 
 if __name__ == "__main__":
@@ -120,6 +135,6 @@ if __name__ == "__main__":
     print ("Running example on 2,500 MNIST digits...")
     x = np.loadtxt("mnist2500_X.txt")
     labels = np.loadtxt('mnist2500_labels.txt')
-    y = tsne(x, 2, 30, 30)
+    y = tsne(x, 3, 30, 30)
     plot.scatter(y[:, 0], y[:, 1], 20, labels)
     plot.show()
