@@ -1,8 +1,9 @@
 import numpy as np
-import sklearn as sk
+import sklearn
 import scipy as sp
 import scipy.spatial
 import pylab as plot
+from sklearn import cluster
 
 np.random.seed(1)
 
@@ -10,7 +11,7 @@ np.random.seed(1)
 def x2p(x=np.array([]), perplexity=40):
     # Get dimensions
     (n, d) = np.shape(x)
-    distance = sp.spatial.distance.pdist(x, metric='euclidean')
+    distance = sp.spatial.distance.pdist(x, 'euclidean')
     tri = np.zeros((n,n))
     tri[np.triu_indices(n, 1)] = distance
     tri = tri + tri.T
@@ -68,7 +69,7 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
     plot.ion()
     x = pca(x, initial_dims).real
     (n, d) = x.shape
-    maxit = 1000
+    maxit = 200
     momentum_init = .5
     momentum_final = .8
     eta = 500
@@ -82,17 +83,20 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
     P = np.maximum(P, 1e-12)
     Q = np.zeros((n, n))
     gains = np.ones((n, intrinsic_dim))
+    dof = 1
+    cut = 0
+    C = 100
 
     for iter in range(maxit):
         # Compute Q
 
-        distance = sp.spatial.distance.pdist(y, metric='euclidean')
+        distance = sp.spatial.distance.pdist(y, 'euclidean')
         tri = np.zeros((n, n))
         tri[np.triu_indices(n, 1)] = distance
         tri = tri + tri.T
         np.fill_diagonal(tri, np.infty)
         for j in range(n):
-            q = np.divide(np.power(1 + np.square(tri[j]), -1), np.sum(np.power(1 + np.square(tri[j]), -1)))
+            q = np.divide(np.power(1 + np.square(tri[j]), -dof), np.sum(np.power(1 + np.square(tri[j]), -dof)))
             Q[j] = q
         Q = Q/np.sum(Q)
         Q = np.maximum(Q,1e-12)
@@ -100,7 +104,7 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
         PQ = P-Q
 
         for i in range(n):
-            dY[i, :] = np.sum(np.tile(PQ[:, i] * np.power((1 + np.square(tri[:, i])), -1), (intrinsic_dim, 1)).T * (y[i, :]-y), 0)
+            dY[i, :] = np.sum(np.tile(PQ[:, i] * np.power((1 + np.square(tri[:, i])), -dof), (intrinsic_dim, 1)).T * (y[i, :]-y), 0)
 
         # Set new outputs
         if iter < 20:
@@ -116,13 +120,14 @@ def tsne(x=np.array([]), intrinsic_dim = 2, initial_dims= 30,  perplexity = 30):
 
 
         # Compute Current Cost
+        C2 = C
         C = np.sum(np.multiply(P, np.log(np.divide(P,Q))))
 
 
-        if iter == 100:
+        if C2 < C and cut == 0:
             P = P/4
-
-        if iter % 1 == 0:
+            cut = 1
+        if iter % 10 == 0:
             print("Iteration", (iter + 1), ": Error is ", round(C, 4))
             plot.clf()
             plot.pause(.001)
@@ -135,6 +140,10 @@ if __name__ == "__main__":
     print ("Running example on 2,500 MNIST digits...")
     x = np.loadtxt("mnist2500_X.txt")
     labels = np.loadtxt('mnist2500_labels.txt')
-    y = tsne(x, 3, 30, 30)
-    plot.scatter(y[:, 0], y[:, 1], 20, labels)
-    plot.show()
+    y = tsne(x, 2, 40, 70)
+
+    a = cluster.k_means(y,10)
+    print(sklearn.metrics.homogeneity_score(labels, a[1]))
+
+#    plot.scatter(y[:, 0], y[:, 1], 20, labels)
+#    plot.show()
